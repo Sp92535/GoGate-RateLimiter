@@ -1,0 +1,20 @@
+server: 
+  host: "localhost"
+  port: "6969"
+
+resources:
+  - name: Google
+    endpoint: /goo
+    destination_url: "https://google.com"
+    rate_limits:
+      GET:
+        capacity: 10
+        empty_rate_per_second: 10
+    
+  - name: Facebook
+    endpoint: /face
+    destination_url: "https://facebook.com"
+    rate_limits:
+      GET:
+        capacity: 50
+        refill_rate_per_second: 10
