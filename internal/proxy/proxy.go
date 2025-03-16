@@ -102,7 +102,7 @@ func Run() {
 		// initializing limiters
 		limiters := make(map[string]limiter.Limiter)
 		for method, rateLimit := range resource.RateLimits {
-			limiters[method] = limiter.NewTokenBucket(rateLimit.Capacity, rateLimit.RefillRatePerSecond, proxy)
+			limiters[method] = limiter.NewSlidingWindowLog(rateLimit.Capacity, proxy)
 		}
 
 		// handling the proxy

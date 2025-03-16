@@ -83,7 +83,7 @@ func (tb *TokenBucket) AddRequest(req *Request) bool {
 		tb.tokens--
 
 		tb.mu.Unlock()
-		// Serve request
+		// serve request
 		go ServeReq(tb.proxy, req, nil)
 
 		return true
@@ -95,6 +95,6 @@ func (tb *TokenBucket) AddRequest(req *Request) bool {
 }
 
 // function to stop the algorithm
-func (tb *TokenBucket) StopRefiller() {
+func (tb *TokenBucket) Stop() {
 	tb.cancel()
 }

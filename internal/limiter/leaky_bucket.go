@@ -69,7 +69,7 @@ func (lb *LeakyBucket) drip() {
 
 					// acquire slot
 					worker <- struct{}{}
-					// Serve request
+					// serve request
 					go ServeReq(lb.proxy, req, worker)
 
 				default:
@@ -98,6 +98,6 @@ func (lb *LeakyBucket) AddRequest(req *Request) bool {
 }
 
 // function to stop the algorithm
-func (lb *LeakyBucket) StopRefiller() {
+func (lb *LeakyBucket) Stop() {
 	lb.cancel()
 }

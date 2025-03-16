@@ -11,7 +11,7 @@ import (
 // limiter interface to support all common functions of a rate limiter
 type Limiter interface {
 	AddRequest(*Request) bool
-	StopRefiller()
+	Stop()
 }
 
 // request blueprint
@@ -44,6 +44,7 @@ func NewRequest(id int, w http.ResponseWriter, r *http.Request) *Request {
 
 func ServeReq(proxy *httputil.ReverseProxy, req *Request, worker chan struct{}) {
 
+	// releasing the worker if present
 	defer func(){ 
 		if worker!=nil{
 			<-worker
