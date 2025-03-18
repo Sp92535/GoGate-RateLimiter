@@ -5,6 +5,8 @@ import (
 	"context"
 	"net/http/httputil"
 	"time"
+
+	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
 )
 
 type LeakyBucket struct {
@@ -16,8 +18,11 @@ type LeakyBucket struct {
 	// queue capacity
 	capacity int
 
-	// number of requests served per second
-	emptyRatePerSecond int
+	// number of requests served per unit time
+	noOfRequests int
+
+	// time duration unit
+	interval time.Duration
 
 	// context for closure
 	ctx    context.Context
@@ -28,15 +33,16 @@ type LeakyBucket struct {
 }
 
 // constructor to initialize leaky bucket
-func NewLeakyBucket(capacity int, emptyRatePerSecond int, proxy *httputil.ReverseProxy) *LeakyBucket {
+func NewLeakyBucket(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	lb := &LeakyBucket{
-		queue:              make(chan *Request, capacity),
-		capacity:           capacity,
-		emptyRatePerSecond: emptyRatePerSecond,
-		ctx:                ctx,
-		cancel:             cancel,
-		proxy:              proxy,
+		queue:        make(chan *Request, rateLimit.Capacity),
+		capacity:     rateLimit.Capacity,
+		ctx:          ctx,
+		cancel:       cancel,
+		proxy:        proxy,
+		noOfRequests: rateLimit.NoOfRequests,
+		interval:     rateLimit.TimeDuration,
 	}
 
 	// starting the dripping of bucket as a go routine once it is initalized
@@ -49,11 +55,12 @@ func NewLeakyBucket(capacity int, emptyRatePerSecond int, proxy *httputil.Revers
 func (lb *LeakyBucket) drip() {
 
 	// initialize ticker to tick every second
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(lb.interval)
 	defer ticker.Stop()
 
 	// following worker pool pattern
-	worker := make(chan struct{}, lb.emptyRatePerSecond)
+	limit := min(100, lb.noOfRequests)
+	worker := make(chan struct{}, limit)
 
 	for {
 		select {
@@ -61,7 +68,7 @@ func (lb *LeakyBucket) drip() {
 		// dripping as per rate
 		case <-ticker.C:
 
-			for range lb.emptyRatePerSecond {
+			for range lb.noOfRequests {
 
 				select {
 				// getting the first request in queue

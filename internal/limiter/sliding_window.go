@@ -6,6 +6,8 @@ import (
 	"net/http/httputil"
 	"sync"
 	"time"
+
+	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
 )
 
 type SlidingWindow struct {
@@ -19,8 +21,11 @@ type SlidingWindow struct {
 	// current window timestamp
 	timeStamp time.Time
 
-	// window capacity
-	capacity int
+	// window noOfRequests
+	noOfRequests int
+
+	// window duration
+	interval time.Duration
 
 	// context for closure
 	ctx    context.Context
@@ -34,16 +39,17 @@ type SlidingWindow struct {
 }
 
 // constructor to initialize window
-func NewSlidingWindow(capacity int, proxy *httputil.ReverseProxy) *SlidingWindow {
+func NewSlidingWindow(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	sw := &SlidingWindow{
-		curr:      0,
-		prev:      0,
-		timeStamp: time.Now(),
-		capacity:  capacity,
-		ctx:       ctx,
-		cancel:    cancel,
-		proxy:     proxy,
+		curr:         0,
+		prev:         0,
+		timeStamp:    time.Now(),
+		ctx:          ctx,
+		cancel:       cancel,
+		proxy:        proxy,
+		noOfRequests: rateLimit.NoOfRequests,
+		interval:     rateLimit.TimeDuration,
 	}
 
 	// starting the resetting of window as a go routine once it is initalized
@@ -56,7 +62,7 @@ func NewSlidingWindow(capacity int, proxy *httputil.ReverseProxy) *SlidingWindow
 func (sw *SlidingWindow) reset() {
 
 	// initialize ticker to tick every second
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(sw.interval)
 	defer ticker.Stop()
 
 	for {
@@ -92,15 +98,15 @@ func (sw *SlidingWindow) AddRequest(req *Request) bool {
 	sw.mu.Lock()
 
 	// getting the elapsed time since latest window start
-	elapsed := time.Since(sw.timeStamp).Milliseconds()
+	elapsed := time.Since(sw.timeStamp)
 
-	// calculating dynamic weight as per second 
-	weight := float64(1000-elapsed) / float64(1000)
+	// calculating dynamic weight as per duration
+	weight := float64(sw.interval-elapsed) / float64(sw.interval)
 
 	// calculating requests in current dynamic window
 	reqsInCurrSildingWindow := float64(sw.prev)*weight + float64(sw.curr)
 
-	if reqsInCurrSildingWindow < float64(sw.capacity) {
+	if reqsInCurrSildingWindow < float64(sw.noOfRequests) {
 		// incrementing requests in current window
 		sw.curr++
 

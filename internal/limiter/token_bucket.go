@@ -6,18 +6,23 @@ import (
 	"net/http/httputil"
 	"sync"
 	"time"
+
+	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
 )
 
 type TokenBucket struct {
-	
-	// track current tokens in bucket 
-	tokens              int
+
+	// track current tokens in bucket
+	tokens int
 
 	// bucket capacity
-	capacity            int
-	
-	// bucket refill rate per second
-	refillRatePerSecond int
+	capacity int
+
+	// bucket refill requests
+	noOfRequests int
+
+	// bucket refill duration
+	interval time.Duration
 
 	// context for closure
 	ctx    context.Context
@@ -31,17 +36,18 @@ type TokenBucket struct {
 }
 
 // constructor to initialize token bucket
-func NewTokenBucket(capacity int, refillRatePerSecond int, proxy *httputil.ReverseProxy) *TokenBucket {
+func NewTokenBucket(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	tb := &TokenBucket{
-		tokens:              capacity,	// starting with full capacity
-		capacity:            capacity,
-		refillRatePerSecond: refillRatePerSecond,
-		ctx:                 ctx,
-		cancel:              cancel,
-		proxy:               proxy,
+		tokens:       rateLimit.Capacity, // starting with full capacity
+		capacity:     rateLimit.Capacity,
+		ctx:          ctx,
+		cancel:       cancel,
+		proxy:        proxy,
+		noOfRequests: rateLimit.NoOfRequests,
+		interval:     rateLimit.TimeDuration,
 	}
-	
+
 	// starting the refilling of bucket as a go routine once it is initalized
 	go tb.refill()
 
@@ -52,7 +58,7 @@ func NewTokenBucket(capacity int, refillRatePerSecond int, proxy *httputil.Rever
 func (tb *TokenBucket) refill() {
 
 	// initialize ticker to tick every second
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(tb.interval)
 	defer ticker.Stop()
 
 	for {
@@ -62,7 +68,7 @@ func (tb *TokenBucket) refill() {
 		case <-ticker.C:
 			tb.mu.Lock()
 			// update to whatever is minimum
-			tb.tokens = min(tb.tokens+tb.refillRatePerSecond, tb.capacity)
+			tb.tokens = min(tb.tokens+tb.noOfRequests, tb.capacity)
 			tb.mu.Unlock()
 
 		// returning from function if context is cancelled

@@ -102,7 +102,11 @@ func Run() {
 		// initializing limiters
 		limiters := make(map[string]limiter.Limiter)
 		for method, rateLimit := range resource.RateLimits {
-			limiters[method] = limiter.NewSlidingWindowLog(rateLimit.Capacity, proxy)
+			algo, exists := limiter.Limiters[rateLimit.Strategy]
+			if !exists {
+				log.Fatalf("no such strategy %s", rateLimit.Strategy)
+			}
+			limiters[method] = algo(rateLimit, proxy)
 		}
 
 		// handling the proxy

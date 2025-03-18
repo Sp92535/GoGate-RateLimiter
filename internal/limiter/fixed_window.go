@@ -6,6 +6,8 @@ import (
 	"net/http/httputil"
 	"sync"
 	"time"
+
+	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
 )
 
 type FixedWindow struct {
@@ -13,8 +15,11 @@ type FixedWindow struct {
 	// track requests in current window
 	curr int
 
-	// window capacity
-	capacity int
+	// window noOfRequests
+	noOfRequests int
+
+	// window duration
+	interval time.Duration
 
 	// context for closure
 	ctx    context.Context
@@ -28,14 +33,15 @@ type FixedWindow struct {
 }
 
 // constructor to initialize window
-func NewFixedWindow(capacity int, proxy *httputil.ReverseProxy) *FixedWindow {
+func NewFixedWindow(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	fw := &FixedWindow{
-		curr:     0,
-		capacity: capacity,
-		ctx:      ctx,
-		cancel:   cancel,
-		proxy:    proxy,
+		curr:         0,
+		ctx:          ctx,
+		cancel:       cancel,
+		proxy:        proxy,
+		noOfRequests: rateLimit.NoOfRequests,
+		interval:     rateLimit.TimeDuration,
 	}
 
 	// starting the resetting of window as a go routine once it is initalized
@@ -48,7 +54,7 @@ func NewFixedWindow(capacity int, proxy *httputil.ReverseProxy) *FixedWindow {
 func (fw *FixedWindow) reset() {
 
 	// initialize ticker to tick every second
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(fw.interval)
 	defer ticker.Stop()
 
 	for {
@@ -74,7 +80,7 @@ func (fw *FixedWindow) AddRequest(req *Request) bool {
 
 	fw.mu.Lock()
 
-	if fw.curr < fw.capacity {
+	if fw.curr < fw.noOfRequests {
 		// incrementing requests in current window
 		fw.curr++
 

@@ -5,6 +5,8 @@ import (
 	"context"
 	"net/http/httputil"
 	"time"
+
+	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
 )
 
 type SlidingWindowLog struct {
@@ -15,8 +17,11 @@ type SlidingWindowLog struct {
 	// logs of all request
 	logQueue chan time.Time
 
-	// window capacity
-	capacity int
+	// window noOfRequests
+	noOfRequests int
+
+	// window duration
+	interval time.Duration
 
 	// context for closure
 	ctx    context.Context
@@ -27,15 +32,16 @@ type SlidingWindowLog struct {
 }
 
 // constructor to initialize window
-func NewSlidingWindowLog(capacity int, proxy *httputil.ReverseProxy) *SlidingWindowLog {
+func NewSlidingWindowLog(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	swl := &SlidingWindowLog{
-		front:    time.Now(),
-		logQueue: make(chan time.Time, capacity),
-		capacity: capacity,
-		ctx:      ctx,
-		cancel:   cancel,
-		proxy:    proxy,
+		front:        time.Now(),
+		logQueue:     make(chan time.Time, rateLimit.NoOfRequests),
+		ctx:          ctx,
+		cancel:       cancel,
+		proxy:        proxy,
+		noOfRequests: rateLimit.NoOfRequests,
+		interval:     rateLimit.TimeDuration,
 	}
 
 	// starting the removal of logs from window as a go routine once it is initalized
@@ -54,17 +60,16 @@ func (swl *SlidingWindowLog) removeLogs() {
 			return
 		// removing the expired log
 		default:
-			// wait if logQueue is empty 
+			// wait if logQueue is empty
 			swl.front = <-swl.logQueue
-			// check the target time 
-			targetTime := swl.front.Add(time.Second)
+			// check the target time
+			targetTime := swl.front.Add(swl.interval)
 			// sleep untill target time
 			time.Sleep(time.Until(targetTime))
 		}
 	}
 
 }
-
 
 // function to increment requests in window and process the request
 func (swl *SlidingWindowLog) AddRequest(req *Request) bool {

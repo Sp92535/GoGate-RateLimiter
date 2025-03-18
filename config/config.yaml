@@ -8,13 +8,14 @@ resources:
     destination_url: "https://google.com"
     rate_limits:
       GET:
-        capacity: 10
-        empty_rate_per_second: 10
+        strategy: LEAKY-BUCKET
+        capacity: 100
+        rate: 10M/s
     
   - name: Facebook
     endpoint: /face
     destination_url: "https://facebook.com"
     rate_limits:
       GET:
-        capacity: 50
-        refill_rate_per_second: 10
+        strategy: SLIDING-WINDOW-LOG
+        rate: 10K/s

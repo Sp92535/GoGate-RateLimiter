@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"net/http/httputil"
+
+	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
 )
 
 // limiter interface to support all common functions of a rate limiter
@@ -45,8 +47,8 @@ func NewRequest(id int, w http.ResponseWriter, r *http.Request) *Request {
 func ServeReq(proxy *httputil.ReverseProxy, req *Request, worker chan struct{}) {
 
 	// releasing the worker if present
-	defer func(){ 
-		if worker!=nil{
+	defer func() {
+		if worker != nil {
 			<-worker
 		}
 	}()
@@ -65,4 +67,21 @@ func ServeReq(proxy *httputil.ReverseProxy, req *Request, worker chan struct{}) 
 
 	// closing the request
 	req.cancel()
+}
+
+// all limiters
+// alias for the common function
+type LimiterFunc func(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter
+var Limiters map[string]LimiterFunc
+
+// init function is required if any global var is declared
+func init() {
+	Limiters = map[string]LimiterFunc{
+
+		"LEAKY-BUCKET":       NewLeakyBucket,
+		"TOKEN-BUCKET":       NewTokenBucket,
+		"FIXED-WINDOW":       NewFixedWindow,
+		"SLIDING-WINDOW":     NewSlidingWindow,
+		"SLIDING-WINDOW-LOG": NewSlidingWindowLog,
+	}
 }
