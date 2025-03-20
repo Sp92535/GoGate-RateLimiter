@@ -3,17 +3,18 @@ package limiter
 
 import (
 	"context"
+	"log"
 	"net/http/httputil"
-	"sync"
 	"time"
 
 	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
+	"github.com/google/uuid"
 )
 
 type TokenBucket struct {
 
-	// track current tokens in bucket
-	tokens int
+	// track current tokens in bucket this is a unique key for redis
+	key string
 
 	// bucket capacity
 	capacity int
@@ -30,16 +31,13 @@ type TokenBucket struct {
 
 	// corresponding proxy
 	proxy *httputil.ReverseProxy
-
-	// mutex to avoid race conditions of tokens
-	mu sync.Mutex
 }
 
 // constructor to initialize token bucket
 func NewTokenBucket(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	tb := &TokenBucket{
-		tokens:       rateLimit.Capacity, // starting with full capacity
+		key:          uuid.NewString(),
 		capacity:     rateLimit.Capacity,
 		ctx:          ctx,
 		cancel:       cancel,
@@ -47,6 +45,8 @@ func NewTokenBucket(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Li
 		noOfRequests: rateLimit.NoOfRequests,
 		interval:     rateLimit.TimeDuration,
 	}
+
+	Rdb.Set(tb.ctx, tb.key, rateLimit.Capacity, 0)
 
 	// starting the refilling of bucket as a go routine once it is initalized
 	go tb.refill()
@@ -66,10 +66,9 @@ func (tb *TokenBucket) refill() {
 
 		// refill as per rate
 		case <-ticker.C:
-			tb.mu.Lock()
 			// update to whatever is minimum
-			tb.tokens = min(tb.tokens+tb.noOfRequests, tb.capacity)
-			tb.mu.Unlock()
+
+			Scripts["TOKEN-BUCKET"].Run(tb.ctx, Rdb, []string{tb.key}, "core", tb.capacity, tb.noOfRequests).Int()
 
 		// returning from function if context is cancelled
 		case <-tb.ctx.Done():
@@ -82,22 +81,17 @@ func (tb *TokenBucket) refill() {
 // function to take token and process the request
 func (tb *TokenBucket) AddRequest(req *Request) bool {
 
-	tb.mu.Lock()
-
-	if tb.tokens > 0 {
-		// decrementing token
-		tb.tokens--
-
-		tb.mu.Unlock()
-		// serve request
-		go ServeReq(tb.proxy, req, nil)
-
-		return true
-	} else {
-		tb.mu.Unlock()
+	res, err := Scripts["TOKEN-BUCKET"].Run(tb.ctx, Rdb, []string{tb.key}, "take").Int()
+	if err != nil {
+		log.Println("Error:", err)
 		return false
 	}
-
+	if res == 1 {
+		go ServeReq(tb.proxy, req, nil)
+		return true
+	} else {
+		return false
+	}
 }
 
 // function to stop the algorithm

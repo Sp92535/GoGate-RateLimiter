@@ -83,6 +83,14 @@ func NewConfiguration(filePath string) *configuration {
 
 			// setting reqs
 			reqUnit := reqStr[0][len(reqStr[0])-1]
+			if _, err := strconv.Atoi(string(reqUnit)); err == nil {
+				reqValue, err := strconv.Atoi(reqStr[0])
+				if err != nil {
+					log.Fatalf("Error parsing %v", err)
+				}
+				resource.RateLimits[key].NoOfRequests = reqValue
+				continue
+			}
 			reqValue, err := strconv.Atoi(strings.TrimSuffix(reqStr[0], string(reqUnit)))
 
 			if err != nil {

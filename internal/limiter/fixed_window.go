@@ -3,17 +3,18 @@ package limiter
 
 import (
 	"context"
+	"log"
 	"net/http/httputil"
-	"sync"
 	"time"
 
 	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
+	"github.com/google/uuid"
 )
 
 type FixedWindow struct {
 
 	// track requests in current window
-	curr int
+	key string
 
 	// window noOfRequests
 	noOfRequests int
@@ -27,22 +28,21 @@ type FixedWindow struct {
 
 	// corresponding proxy
 	proxy *httputil.ReverseProxy
-
-	// mutex to avoid race conditions of tokens
-	mu sync.Mutex
 }
 
 // constructor to initialize window
 func NewFixedWindow(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	fw := &FixedWindow{
-		curr:         0,
+		key:          uuid.NewString(),
 		ctx:          ctx,
 		cancel:       cancel,
 		proxy:        proxy,
 		noOfRequests: rateLimit.NoOfRequests,
 		interval:     rateLimit.TimeDuration,
 	}
+
+	Rdb.Set(fw.ctx, fw.key, 0, 0)
 
 	// starting the resetting of window as a go routine once it is initalized
 	go fw.reset()
@@ -62,10 +62,8 @@ func (fw *FixedWindow) reset() {
 
 		// refill as per rate
 		case <-ticker.C:
-			fw.mu.Lock()
 			// reset current requests in window to 0
-			fw.curr = 0
-			fw.mu.Unlock()
+			Scripts["FIXED-WINDOW"].Run(fw.ctx, Rdb, []string{fw.key}, "core")
 
 		// returning from function if context is cancelled
 		case <-fw.ctx.Done():
@@ -78,22 +76,17 @@ func (fw *FixedWindow) reset() {
 // function to increment requests in window and process the request
 func (fw *FixedWindow) AddRequest(req *Request) bool {
 
-	fw.mu.Lock()
-
-	if fw.curr < fw.noOfRequests {
-		// incrementing requests in current window
-		fw.curr++
-
-		fw.mu.Unlock()
-		// serve request
-		go ServeReq(fw.proxy, req, nil)
-
-		return true
-	} else {
-		fw.mu.Unlock()
+	res, err := Scripts["FIXED-WINDOW"].Run(fw.ctx, Rdb, []string{fw.key}, "take", fw.noOfRequests).Int()
+	if err != nil {
+		log.Println("Error:", err)
 		return false
 	}
-
+	if res == 1 {
+		go ServeReq(fw.proxy, req, nil)
+		return true
+	} else {
+		return false
+	}
 }
 
 // function to stop the algorithm

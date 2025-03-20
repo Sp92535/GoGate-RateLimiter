@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 
 	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
+	"github.com/redis/go-redis/v9"
 )
 
 // limiter interface to support all common functions of a rate limiter
@@ -72,7 +73,10 @@ func ServeReq(proxy *httputil.ReverseProxy, req *Request, worker chan struct{}) 
 // all limiters
 // alias for the common function
 type LimiterFunc func(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter
+
 var Limiters map[string]LimiterFunc
+var Scripts map[string]*redis.Script
+var Rdb *redis.Client
 
 // init function is required if any global var is declared
 func init() {
@@ -84,4 +88,18 @@ func init() {
 		"SLIDING-WINDOW":     NewSlidingWindow,
 		"SLIDING-WINDOW-LOG": NewSlidingWindowLog,
 	}
+
+	Rdb = utils.InitRedis()
+
+	dirPath := "internal/limiter/scripts/"
+
+	Scripts = map[string]*redis.Script{
+
+		"LEAKY-BUCKET":       utils.LoadScript(dirPath + "leaky_bucket.lua"),
+		"TOKEN-BUCKET":       utils.LoadScript(dirPath + "token_bucket.lua"),
+		"FIXED-WINDOW":       utils.LoadScript(dirPath + "fixed_window.lua"),
+		"SLIDING-WINDOW":     utils.LoadScript(dirPath + "sliding_window.lua"),
+		"SLIDING-WINDOW-LOG": utils.LoadScript(dirPath + "sliding_window_log.lua"),
+	}
+
 }
