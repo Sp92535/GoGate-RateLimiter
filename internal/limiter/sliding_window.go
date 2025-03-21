@@ -3,23 +3,16 @@ package limiter
 
 import (
 	"context"
+	"log"
 	"net/http/httputil"
-	"sync"
 	"time"
 
 	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
+	"github.com/google/uuid"
 )
 
 type SlidingWindow struct {
-
-	// track requests in current window
-	curr int
-
-	// track requests in previous window
-	prev int
-
-	// current window timestamp
-	timeStamp time.Time
+	key string
 
 	// window noOfRequests
 	noOfRequests int
@@ -33,18 +26,13 @@ type SlidingWindow struct {
 
 	// corresponding proxy
 	proxy *httputil.ReverseProxy
-
-	// mutex to avoid race conditions of tokens
-	mu sync.Mutex
 }
 
 // constructor to initialize window
 func NewSlidingWindow(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	sw := &SlidingWindow{
-		curr:         0,
-		prev:         0,
-		timeStamp:    time.Now(),
+		key:          uuid.NewString(),
 		ctx:          ctx,
 		cancel:       cancel,
 		proxy:        proxy,
@@ -70,18 +58,8 @@ func (sw *SlidingWindow) reset() {
 
 		// refill as per rate
 		case <-ticker.C:
-			sw.mu.Lock()
 
-			// set requests in previous window
-			sw.prev = sw.curr
-
-			// reset current window timestamp
-			sw.timeStamp = time.Now()
-
-			// reset current requests in window to 0
-			sw.curr = 0
-
-			sw.mu.Unlock()
+			Scripts["SLIDING-WINDOW"].Run(sw.ctx, Rdb, []string{sw.key}, "core")
 
 		// returning from function if context is cancelled
 		case <-sw.ctx.Done():
@@ -95,28 +73,19 @@ func (sw *SlidingWindow) reset() {
 // function to increment requests in window and process the request
 func (sw *SlidingWindow) AddRequest(req *Request) bool {
 
-	sw.mu.Lock()
+	res, err := Scripts["SLIDING-WINDOW"].Run(sw.ctx, Rdb, []string{sw.key}, "take", sw.noOfRequests, sw.interval).Int()
 
-	// getting the elapsed time since latest window start
-	elapsed := time.Since(sw.timeStamp)
+	if err != nil {
+		log.Println("Error:", err)
+		return false
+	}
+	if res == 1 {
 
-	// calculating dynamic weight as per duration
-	weight := float64(sw.interval-elapsed) / float64(sw.interval)
-
-	// calculating requests in current dynamic window
-	reqsInCurrSildingWindow := float64(sw.prev)*weight + float64(sw.curr)
-
-	if reqsInCurrSildingWindow < float64(sw.noOfRequests) {
-		// incrementing requests in current window
-		sw.curr++
-
-		sw.mu.Unlock()
 		// serve request
 		go ServeReq(sw.proxy, req, nil)
 
 		return true
 	} else {
-		sw.mu.Unlock()
 		return false
 	}
 

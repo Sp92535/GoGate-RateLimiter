@@ -46,8 +46,6 @@ func NewTokenBucket(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Li
 		interval:     rateLimit.TimeDuration,
 	}
 
-	Rdb.Set(tb.ctx, tb.key, rateLimit.Capacity, 0)
-
 	// starting the refilling of bucket as a go routine once it is initalized
 	go tb.refill()
 

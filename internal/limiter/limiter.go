@@ -20,7 +20,7 @@ type Limiter interface {
 // request blueprint
 type Request struct {
 	// request id
-	ID int
+	ID string
 
 	// actual http request
 	r *http.Request
@@ -34,7 +34,7 @@ type Request struct {
 }
 
 // constructor to initialize request
-func NewRequest(id int, w http.ResponseWriter, r *http.Request) *Request {
+func NewRequest(id string, w http.ResponseWriter, r *http.Request) *Request {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Request{
 		ID:     id,

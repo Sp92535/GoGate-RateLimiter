@@ -2,15 +2,21 @@
 package proxy
 
 import (
+	"context"
+	"errors"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/Sp92535/GoGate-RateLimiter/internal/limiter"
 	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
+	"github.com/google/uuid"
 )
 
 // function to initialize new reverse proxy for a target url
@@ -43,7 +49,7 @@ func ProxyRequestHandler(proxy *httputil.ReverseProxy, url *url.URL, endpoint st
 		r.URL.Path = strings.TrimPrefix(path, endpoint)
 
 		// initializing new request
-		req := limiter.NewRequest(rand.Intn(50), w, r)
+		req := limiter.NewRequest(uuid.NewString(), w, r)
 
 		// attempting to add new request in queue
 		if !algo.AddRequest(req) {
@@ -107,6 +113,7 @@ func Run() {
 				log.Fatalf("no such strategy %s", rateLimit.Strategy)
 			}
 			limiters[method] = algo(rateLimit, proxy)
+			defer limiters[method].Stop()
 		}
 
 		// handling the proxy
@@ -116,7 +123,23 @@ func Run() {
 	log.Printf("Server started at %s", address)
 
 	// starting the server
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("unable to start server %v", err)
+	go func() {
+		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("unable to start server %v", err)
+		}
+	}()
+
+	// Graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+
+	shutdownCtx, shutdownRelease := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownRelease()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("HTTP shutdown error: %v", err)
 	}
+	log.Println("Graceful shutdown complete.")
+
 }

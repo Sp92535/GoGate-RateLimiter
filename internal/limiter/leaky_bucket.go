@@ -3,17 +3,20 @@ package limiter
 
 import (
 	"context"
+	"log"
 	"net/http/httputil"
 	"time"
 
 	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
+	"github.com/google/uuid"
 )
 
 type LeakyBucket struct {
+	key string
 
 	// request queue
 	// use of channels is much better one of the reason is thread safety so there is no need of mutex
-	queue chan *Request
+	reqs map[string]*Request
 
 	// queue capacity
 	capacity int
@@ -36,7 +39,8 @@ type LeakyBucket struct {
 func NewLeakyBucket(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	lb := &LeakyBucket{
-		queue:        make(chan *Request, rateLimit.Capacity),
+		key:          uuid.NewString(),
+		reqs:         make(map[string]*Request),
 		capacity:     rateLimit.Capacity,
 		ctx:          ctx,
 		cancel:       cancel,
@@ -68,20 +72,20 @@ func (lb *LeakyBucket) drip() {
 		// dripping as per rate
 		case <-ticker.C:
 
-			for range lb.noOfRequests {
+			dripped, err := Scripts["LEAKY-BUCKET"].Run(lb.ctx, Rdb, []string{lb.key}, "core", lb.noOfRequests).StringSlice()
 
-				select {
-				// getting the first request in queue
-				case req := <-lb.queue:
+			if err != nil {
+				log.Printf("Error :%v", err)
+			}
 
-					// acquire slot
-					worker <- struct{}{}
-					// serve request
-					go ServeReq(lb.proxy, req, worker)
+			for _, id := range dripped {
 
-				default:
-					continue
-				}
+				// acquire slot
+				worker <- struct{}{}
+				// serve request
+				req := lb.reqs[id]
+				go ServeReq(lb.proxy, req, worker)
+				delete(lb.reqs, id)
 			}
 
 		// returning from function if context is cancelled
@@ -96,10 +100,15 @@ func (lb *LeakyBucket) drip() {
 func (lb *LeakyBucket) AddRequest(req *Request) bool {
 
 	// adding the request to queue if space available
-	select {
-	case lb.queue <- req:
+	res, err := Scripts["LEAKY-BUCKET"].Run(lb.ctx, Rdb, []string{lb.key}, "take", req.ID, lb.capacity).Int()
+	if err != nil {
+		log.Println("Error:", err)
+		return false
+	}
+	if res == 1 {
+		lb.reqs[req.ID] = req
 		return true
-	default:
+	} else {
 		return false
 	}
 }

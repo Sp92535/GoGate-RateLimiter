@@ -3,19 +3,18 @@ package limiter
 
 import (
 	"context"
+	"log"
 	"net/http/httputil"
 	"time"
 
 	"github.com/Sp92535/GoGate-RateLimiter/internal/utils"
+	"github.com/google/uuid"
 )
 
 type SlidingWindowLog struct {
 
-	// track timeStamp of first request in current window
-	front time.Time
-
-	// logs of all request
-	logQueue chan time.Time
+	//
+	key string
 
 	// window noOfRequests
 	noOfRequests int
@@ -35,8 +34,7 @@ type SlidingWindowLog struct {
 func NewSlidingWindowLog(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter {
 	ctx, cancel := context.WithCancel(context.Background())
 	swl := &SlidingWindowLog{
-		front:        time.Now(),
-		logQueue:     make(chan time.Time, rateLimit.NoOfRequests),
+		key:          uuid.NewString(),
 		ctx:          ctx,
 		cancel:       cancel,
 		proxy:        proxy,
@@ -61,9 +59,16 @@ func (swl *SlidingWindowLog) removeLogs() {
 		// removing the expired log
 		default:
 			// wait if logQueue is empty
-			swl.front = <-swl.logQueue
+			front, err := Scripts["SLIDING-WINDOW-LOG"].Run(swl.ctx, Rdb, []string{swl.key}, "core").Int()
+			if err != nil {
+				log.Printf("Error :%v", err)
+			}
+			t := time.UnixMilli(int64(front))
 			// check the target time
-			targetTime := swl.front.Add(swl.interval)
+			targetTime := t.Add(swl.interval)
+			if t.Compare(time.UnixMilli(0)) != 0 {
+				log.Println(t.Local(), targetTime.Local())
+			}
 			// sleep untill target time
 			time.Sleep(time.Until(targetTime))
 		}
@@ -74,14 +79,18 @@ func (swl *SlidingWindowLog) removeLogs() {
 // function to increment requests in window and process the request
 func (swl *SlidingWindowLog) AddRequest(req *Request) bool {
 
-	select {
-	// check if any space for next log
-	case swl.logQueue <- time.Now():
+	res, err := Scripts["SLIDING-WINDOW-LOG"].Run(swl.ctx, Rdb, []string{swl.key}, "take", swl.noOfRequests).Int()
+	if err != nil {
+		log.Printf("Error :%v", err)
+	}
+	log.Println("RESS", res)
+	if res == 1 {
 		// serve request
 		go ServeReq(swl.proxy, req, nil)
 		return true
-	default:
+	} else {
 		return false
+
 	}
 
 }

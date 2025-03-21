@@ -8,9 +8,9 @@ resources:
     destination_url: "https://google.com"
     rate_limits:
       GET:
-        strategy: FIXED-WINDOW
+        strategy: LEAKY-BUCKET
         capacity: 10
-        rate: 50/s
+        rate: 10/s
     
   - name: Facebook
     endpoint: /face

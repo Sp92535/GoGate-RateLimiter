@@ -42,8 +42,6 @@ func NewFixedWindow(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Li
 		interval:     rateLimit.TimeDuration,
 	}
 
-	Rdb.Set(fw.ctx, fw.key, 0, 0)
-
 	// starting the resetting of window as a go routine once it is initalized
 	go fw.reset()
 
