@@ -13,10 +13,10 @@ import (
 
 type FixedWindow struct {
 
-	// track requests in current window
+	// key to track requests in current window
 	key string
 
-	// window noOfRequests
+	// no of request allowed in window
 	noOfRequests int
 
 	// window duration
@@ -73,7 +73,7 @@ func (fw *FixedWindow) reset() {
 
 // function to increment requests in window and process the request
 func (fw *FixedWindow) AddRequest(req *Request) bool {
-
+	// check if request is permitted
 	res, err := Scripts["FIXED-WINDOW"].Run(fw.ctx, Rdb, []string{fw.key}, "take", fw.noOfRequests).Int()
 	if err != nil {
 		log.Println("Error:", err)

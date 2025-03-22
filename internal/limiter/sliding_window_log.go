@@ -13,10 +13,10 @@ import (
 
 type SlidingWindowLog struct {
 
-	//
+	// key to track current sliding window
 	key string
 
-	// window noOfRequests
+	// no of request in current window 
 	noOfRequests int
 
 	// window duration
@@ -58,17 +58,18 @@ func (swl *SlidingWindowLog) removeLogs() {
 			return
 		// removing the expired log
 		default:
-			// wait if logQueue is empty
+			// get front of the queue
 			front, err := Scripts["SLIDING-WINDOW-LOG"].Run(swl.ctx, Rdb, []string{swl.key}, "core").Int()
 			if err != nil {
 				log.Printf("Error :%v", err)
 			}
+			
+			// convert to unix milli
 			t := time.UnixMilli(int64(front))
+			
 			// check the target time
 			targetTime := t.Add(swl.interval)
-			if t.Compare(time.UnixMilli(0)) != 0 {
-				log.Println(t.Local(), targetTime.Local())
-			}
+
 			// sleep untill target time
 			time.Sleep(time.Until(targetTime))
 		}
@@ -78,12 +79,12 @@ func (swl *SlidingWindowLog) removeLogs() {
 
 // function to increment requests in window and process the request
 func (swl *SlidingWindowLog) AddRequest(req *Request) bool {
-
+	// chek if request is permitted
 	res, err := Scripts["SLIDING-WINDOW-LOG"].Run(swl.ctx, Rdb, []string{swl.key}, "take", swl.noOfRequests).Int()
 	if err != nil {
 		log.Printf("Error :%v", err)
 	}
-	log.Println("RESS", res)
+
 	if res == 1 {
 		// serve request
 		go ServeReq(swl.proxy, req, nil)

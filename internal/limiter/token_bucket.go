@@ -13,7 +13,7 @@ import (
 
 type TokenBucket struct {
 
-	// track current tokens in bucket this is a unique key for redis
+	// key to track current tokens in bucket
 	key string
 
 	// bucket capacity
@@ -64,8 +64,8 @@ func (tb *TokenBucket) refill() {
 
 		// refill as per rate
 		case <-ticker.C:
-			// update to whatever is minimum
 
+			// update to whatever is minimum
 			Scripts["TOKEN-BUCKET"].Run(tb.ctx, Rdb, []string{tb.key}, "core", tb.capacity, tb.noOfRequests).Int()
 
 		// returning from function if context is cancelled
@@ -79,11 +79,13 @@ func (tb *TokenBucket) refill() {
 // function to take token and process the request
 func (tb *TokenBucket) AddRequest(req *Request) bool {
 
+	// check if request can be served
 	res, err := Scripts["TOKEN-BUCKET"].Run(tb.ctx, Rdb, []string{tb.key}, "take").Int()
 	if err != nil {
 		log.Println("Error:", err)
 		return false
 	}
+	// serve request if permitted
 	if res == 1 {
 		go ServeReq(tb.proxy, req, nil)
 		return true

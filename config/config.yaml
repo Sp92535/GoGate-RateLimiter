@@ -8,7 +8,7 @@ resources:
     destination_url: "https://google.com"
     rate_limits:
       GET:
-        strategy: LEAKY-BUCKET
+        strategy: SLIDING-WINDOW-LOG
         capacity: 10
         rate: 10/s
     

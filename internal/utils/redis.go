@@ -1,3 +1,4 @@
+// redis.go
 package utils
 
 import (
@@ -7,6 +8,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// function to initialize redis client to interact with redis
 func InitRedis() *redis.Client {
 	rdb := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
@@ -14,6 +16,7 @@ func InitRedis() *redis.Client {
 	return rdb
 }
 
+// function to load lua scripts as a redis script
 func LoadScript(filename string) *redis.Script {
 	data, err := os.ReadFile(filename)
 	if err != nil {

@@ -29,7 +29,7 @@ func ProxyRequestHandler(proxy *httputil.ReverseProxy, url *url.URL, endpoint st
 
 	// return function expected by http handler
 	return func(w http.ResponseWriter, r *http.Request) {
-
+		// getting algo asper request method
 		algo, exists := limiters[r.Method]
 		if !exists {
 			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -93,6 +93,9 @@ func Run() {
 		Handler: mux,
 	}
 
+	// stop funcs to stop every thing at end
+	var stopFunc []func()
+
 	// looping through all the endpoints to set proxies
 	for _, resource := range config.Resources {
 
@@ -113,7 +116,8 @@ func Run() {
 				log.Fatalf("no such strategy %s", rateLimit.Strategy)
 			}
 			limiters[method] = algo(rateLimit, proxy)
-			defer limiters[method].Stop()
+			// exiting all algos at end of Run
+			stopFunc = append(stopFunc, limiters[method].Stop)
 		}
 
 		// handling the proxy
@@ -122,24 +126,33 @@ func Run() {
 
 	log.Printf("Server started at %s", address)
 
-	// starting the server
+	// starting the server as a separate go routine
 	go func() {
 		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("unable to start server %v", err)
 		}
 	}()
 
-	// Graceful shutdown
+	// graceful shutdown
+	// initializing an buffered channel to listen for shutdown signal CTRL+C
 	sigChan := make(chan os.Signal, 1)
+	// notify the channel in specified signals
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
+	// Stop all limiters
+	for _, stop := range stopFunc {
+		stop()
+	}
+
+	// initializing context for timeout
 	shutdownCtx, shutdownRelease := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownRelease()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("HTTP shutdown error: %v", err)
 	}
+
 	log.Println("Graceful shutdown complete.")
 
 }

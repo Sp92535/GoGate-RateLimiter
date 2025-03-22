@@ -12,6 +12,7 @@ import (
 )
 
 type SlidingWindow struct {
+	// key to track requests
 	key string
 
 	// window noOfRequests
@@ -58,7 +59,6 @@ func (sw *SlidingWindow) reset() {
 
 		// refill as per rate
 		case <-ticker.C:
-
 			Scripts["SLIDING-WINDOW"].Run(sw.ctx, Rdb, []string{sw.key}, "core")
 
 		// returning from function if context is cancelled
@@ -72,7 +72,7 @@ func (sw *SlidingWindow) reset() {
 // core functionality 2 of the algorithm calculation of dynamic window size
 // function to increment requests in window and process the request
 func (sw *SlidingWindow) AddRequest(req *Request) bool {
-
+	// check if request can be permitted
 	res, err := Scripts["SLIDING-WINDOW"].Run(sw.ctx, Rdb, []string{sw.key}, "take", sw.noOfRequests, sw.interval).Int()
 
 	if err != nil {

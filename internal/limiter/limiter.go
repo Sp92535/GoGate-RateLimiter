@@ -75,11 +75,16 @@ func ServeReq(proxy *httputil.ReverseProxy, req *Request, worker chan struct{}) 
 type LimiterFunc func(rateLimit *utils.RateLimit, proxy *httputil.ReverseProxy) Limiter
 
 var Limiters map[string]LimiterFunc
+
+// all lua scripts asper strategy
 var Scripts map[string]*redis.Script
+
+// redis client
 var Rdb *redis.Client
 
 // init function is required if any global var is declared
 func init() {
+	// initializing all limiters
 	Limiters = map[string]LimiterFunc{
 
 		"LEAKY-BUCKET":       NewLeakyBucket,
@@ -89,10 +94,13 @@ func init() {
 		"SLIDING-WINDOW-LOG": NewSlidingWindowLog,
 	}
 
+	// initializing redis client
 	Rdb = utils.InitRedis()
 
+	// directory path for all scripts
 	dirPath := "internal/limiter/scripts/"
 
+	// initializing all scripts 
 	Scripts = map[string]*redis.Script{
 
 		"LEAKY-BUCKET":       utils.LoadScript(dirPath + "leaky_bucket.lua"),

@@ -12,10 +12,10 @@ import (
 )
 
 type LeakyBucket struct {
+	// key to track bucket
 	key string
 
-	// request queue
-	// use of channels is much better one of the reason is thread safety so there is no need of mutex
+	// temperoray mapping of id -> request
 	reqs map[string]*Request
 
 	// queue capacity
@@ -71,19 +71,23 @@ func (lb *LeakyBucket) drip() {
 
 		// dripping as per rate
 		case <-ticker.C:
-
+			// get all dripped requests
 			dripped, err := Scripts["LEAKY-BUCKET"].Run(lb.ctx, Rdb, []string{lb.key}, "core", lb.noOfRequests).StringSlice()
 
 			if err != nil {
 				log.Printf("Error :%v", err)
 			}
-
+			// start serving all dripped request
 			for _, id := range dripped {
 
 				// acquire slot
 				worker <- struct{}{}
 				// serve request
-				req := lb.reqs[id]
+				req, exists := lb.reqs[id]
+				if !exists {
+					<-worker
+					continue
+				}
 				go ServeReq(lb.proxy, req, worker)
 				delete(lb.reqs, id)
 			}
